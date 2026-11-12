@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1530">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>OtoBridge — PCの音をiPhoneへ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&display=swap" rel="stylesheet">
+<!-- まず同じフォルダの lib/ から読み込み、無ければCDNを2系統試す -->
+<script src="lib/peerjs.min.js"></script>
+<script>if(!window.Peer)document.write('<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"><\/script>');</script>
+<script>if(!window.Peer)document.write('<script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"><\/script>');</script>
+<script src="lib/qrcode.min.js"></script>
+<script>if(!window.QRCode)document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"><\/script>');</script>
+<style>
+  :root{
+    --bg:#0b1530; --bg2:#0f1d44; --card:rgba(255,255,255,.05); --line:rgba(140,180,255,.16);
+    --text:#e8efff; --sub:#9fb1d8; --blue:#4c8dff; --cyan:#4fd6ff; --ok:#3ee0a0; --warn:#ffb648; --err:#ff6b7d;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{min-height:100%}
+  body{
+    font-family:"Zen Kaku Gothic New",system-ui,-apple-system,"Hiragino Sans",sans-serif;
+    color:var(--text);
+    background:
+      radial-gradient(900px 500px at 85% -10%, rgba(79,214,255,.18), transparent 60%),
+      radial-gradient(700px 500px at -10% 20%, rgba(76,141,255,.20), transparent 60%),
+      linear-gradient(180deg,var(--bg),var(--bg2));
+    background-attachment:fixed;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:880px;margin:0 auto;padding:22px 20px 60px}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .logo{display:flex;align-items:center;gap:12px;cursor:pointer}
+  .logo svg{width:42px;height:42px}
+  .logo b{font-size:20px;letter-spacing:.02em;display:block}
+  .logo small{color:var(--sub);font-size:12px}
+  .badge{font-size:12px;color:var(--cyan);border:1px solid rgba(79,214,255,.35);background:rgba(79,214,255,.08);padding:6px 12px;border-radius:999px;white-space:nowrap}
+
+  .hero{margin:46px 0 30px}
+  .hero h1{font-size:clamp(34px,7vw,58px);line-height:1.15;font-weight:900;letter-spacing:.01em}
+  .hero h1 em{font-style:normal;background:linear-gradient(90deg,var(--blue),var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .hero p{color:var(--sub);margin-top:16px;line-height:1.8;font-size:15px}
+
+  .steps{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:26px}
+  .step{display:flex;gap:12px;align-items:flex-start;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px 16px;font-size:14px;line-height:1.6}
+  .step i{flex:none;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-style:normal;font-weight:700;font-size:13px;background:linear-gradient(135deg,var(--blue),var(--cyan));color:#06122e}
+
+  .roles{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .role{position:relative;text-align:left;cursor:pointer;color:inherit;font:inherit;background:var(--card);border:1px solid var(--line);border-radius:22px;padding:24px;transition:.2s;overflow:hidden}
+  .role:hover{border-color:rgba(79,214,255,.55);transform:translateY(-2px);background:rgba(255,255,255,.07)}
+  .role .ico{width:52px;height:52px;border-radius:14px;display:grid;place-items:center;background:rgba(76,141,255,.15);margin-bottom:16px}
+  .role .ico svg{width:28px;height:28px;stroke:var(--cyan)}
+  .role h2{font-size:21px;margin-bottom:8px}
+  .role p{color:var(--sub);font-size:14px;line-height:1.7}
+  .role .go{margin-top:16px;color:var(--cyan);font-size:14px;font-weight:700}
+  .role.rec::after{content:"この端末におすすめ";position:absolute;top:16px;right:16px;font-size:11px;color:#06122e;background:var(--cyan);padding:3px 9px;border-radius:999px;font-weight:700}
+
+  .notes{margin-top:28px;display:grid;gap:8px;color:var(--sub);font-size:13px;line-height:1.7}
+  .notes div{display:flex;gap:8px}
+  .notes div::before{content:"•";color:var(--cyan)}
+
+  /* panels */
+  .panel{display:none;margin-top:30px}
+  .panel.show{display:block}
+  .back{background:none;border:none;color:var(--sub);font:inherit;font-size:14px;cursor:pointer;margin-bottom:18px}
+  .back:hover{color:var(--text)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:24px;padding:28px}
+  .card h2{font-size:24px;margin-bottom:6px}
+  .card .lead{color:var(--sub);font-size:14px;line-height:1.8;margin-bottom:22px}
+
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:10px;border:none;cursor:pointer;font:inherit;font-weight:700;font-size:16px;padding:16px 26px;border-radius:14px;color:#06122e;background:linear-gradient(135deg,var(--blue),var(--cyan));box-shadow:0 10px 30px rgba(76,141,255,.35);transition:.15s;width:100%}
+  .btn:hover{filter:brightness(1.08)}
+  .btn:active{transform:scale(.98)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line);box-shadow:none}
+  .btn.danger{background:rgba(255,107,125,.12);color:var(--err);border:1px solid rgba(255,107,125,.4);box-shadow:none}
+
+  .status{display:flex;align-items:center;gap:10px;font-size:14px;padding:12px 14px;border-radius:12px;background:rgba(0,0,0,.2);margin:16px 0;line-height:1.6}
+  .dot{flex:none;width:10px;height:10px;border-radius:50%;background:var(--sub)}
+  .status.ok .dot{background:var(--ok);box-shadow:0 0 0 0 rgba(62,224,160,.6);animation:pulse 1.6s infinite}
+  .status.wait .dot{background:var(--warn)}
+  .status.err .dot{background:var(--err)}
+  .status.err{color:#ffc2ca}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(62,224,160,.6)}100%{box-shadow:0 0 0 12px rgba(62,224,160,0)}}
+
+  .share{display:grid;grid-template-columns:auto 1fr;gap:26px;align-items:center;margin:8px 0 18px}
+  #qr{background:#fff;padding:12px;border-radius:16px;width:184px;height:184px}
+  #qr img,#qr canvas{width:160px!important;height:160px!important}
+  .codebox small{color:var(--sub);font-size:13px}
+  .code{font-size:clamp(40px,8vw,58px);font-weight:900;letter-spacing:.14em;font-variant-numeric:tabular-nums;margin:4px 0 8px;background:linear-gradient(90deg,#fff,var(--cyan));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .listeners{font-size:14px;color:var(--sub)}
+  .listeners b{color:var(--ok);font-size:18px}
+
+  .meter{height:8px;border-radius:99px;background:rgba(255,255,255,.08);overflow:hidden;margin:6px 0 20px}
+  .meter span{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--blue),var(--cyan),var(--ok));transition:width .08s linear}
+  .meterlabel{font-size:12px;color:var(--sub)}
+
+  .help{margin-top:18px;background:rgba(255,182,72,.07);border:1px solid rgba(255,182,72,.28);border-radius:14px;padding:14px 16px;font-size:13px;line-height:1.8;color:#ffe0b0}
+  .help b{color:#ffd08a}
+
+  .codeinput{display:flex;gap:8px;justify-content:center;margin:6px 0 20px}
+  .codeinput input{width:48px;height:62px;text-align:center;font:inherit;font-size:28px;font-weight:900;color:var(--text);background:rgba(0,0,0,.25);border:1px solid var(--line);border-radius:12px;outline:none}
+  .codeinput input:focus{border-color:var(--cyan);box-shadow:0 0 0 3px rgba(79,214,255,.2)}
+
+  .playing{display:none;text-align:center;padding:10px 0 4px}
+  .playing.show{display:block}
+  .bars{display:flex;gap:6px;justify-content:center;align-items:flex-end;height:70px;margin:10px 0 18px}
+  .bars span{width:9px;border-radius:5px;background:linear-gradient(180deg,var(--cyan),var(--blue));height:12px;transition:height .08s}
+  .bars.idle span{animation:idle 1.2s ease-in-out infinite}
+  .bars.idle span:nth-child(2n){animation-delay:.2s}.bars.idle span:nth-child(3n){animation-delay:.4s}
+  @keyframes idle{50%{height:30px}}
+  .tip{color:var(--sub);font-size:13px;line-height:1.7;margin-top:14px}
+  .row{display:flex;gap:10px;margin-top:12px}
+  .hidden{display:none!important}
+
+  footer{margin-top:40px;text-align:center;color:rgba(159,177,216,.6);font-size:12px}
+
+  @media (max-width:680px){
+    .steps,.roles{grid-template-columns:1fr}
+    .share{grid-template-columns:1fr;justify-items:center;text-align:center}
+    .hero{margin:32px 0 22px}
+    .card{padding:22px}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo" id="home">
+      <svg viewBox="0 0 48 48" fill="none">
+        <defs><linearGradient id="g" x1="0" y1="0" x2="48" y2="48"><stop stop-color="#4c8dff"/><stop offset="1" stop-color="#4fd6ff"/></linearGradient></defs>
+        <rect width="48" height="48" rx="13" fill="url(#g)"/>
+        <path d="M9 30c4-10 26-10 30 0" stroke="#06122e" stroke-width="3.2" stroke-linecap="round"/>
+        <path d="M15 30v-5M24 30v-8M33 30v-5" stroke="#06122e" stroke-width="3.2" stroke-linecap="round"/>
+      </svg>
+      <div><b>OtoBridge</b><small>かんたん接続・音声ストリーミング</small></div>
+    </div>
+    <span class="badge">● 同じWi‑Fiで接続</span>
+  </header>
+
+  <!-- HOME -->
+  <section id="view-home">
+    <div class="hero">
+      <h1>PCの音を、<br><em>iPhoneで聴く。</em></h1>
+      <p>Bluetoothのペアリングは不要。ゲーム・動画・音楽の音を、<br>ブラウザだけでiPhoneのスピーカーやイヤホンに届けます。</p>
+    </div>
+
+    <div class="steps">
+      <div class="step"><i>1</i><div>PCとiPhoneを<b>同じWi‑Fi</b>につなぐ</div></div>
+      <div class="step"><i>2</i><div>PCで配信を始め、iPhoneで<b>QRコード</b>か<b>接続コード</b>を読み取る</div></div>
+    </div>
+
+    <div class="roles">
+      <button class="role" id="role-pc">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/></svg></div>
+        <h2>PCから配信する</h2>
+        <p>このPCで鳴っている音を共有します。接続コードとQRコードが表示されます。</p>
+        <div class="go">配信の準備へ →</div>
+      </button>
+      <button class="role" id="role-phone">
+        <div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg></div>
+        <h2>iPhoneで聴く</h2>
+        <p>PCに表示された6桁のコードを入力するか、QRコードを読み取って接続します。</p>
+        <div class="go">聴く準備へ →</div>
+      </button>
+    </div>
+
+    <div class="notes">
+      <div>先にPCで配信を開始してから、iPhoneで接続してください。</div>
+      <div>音声は端末どうしで直接やり取りされ、どこにも保存されません。</div>
+      <div>対応環境：PCは Windows の Chrome / Edge、iPhoneは Safari。</div>
+    </div>
+  </section>
+
+  <!-- PC -->
+  <section id="view-pc" class="panel">
+    <button class="back" data-back>← 戻る</button>
+    <div class="card">
+      <h2>PCから配信する</h2>
+      <p class="lead" id="pc-lead">「配信を開始」を押すと共有する画面を選ぶ画面が出ます。<b>「画面全体」</b>を選び、左下の<b>「システム オーディオも共有する」</b>をオンにしてください。</p>
+
+      <button class="btn" id="pc-start">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>配信を開始
+      </button>
+
+      <div id="pc-live" class="hidden">
+        <div class="share">
+          <div id="qr"></div>
+          <div class="codebox">
+            <small>接続コード</small>
+            <div class="code" id="pc-code">------</div>
+            <div class="listeners">接続中のiPhone：<b id="pc-count">0</b> 台</div>
+          </div>
+        </div>
+        <div class="meterlabel">送信中の音量</div>
+        <div class="meter"><span id="pc-meter"></span></div>
+        <button class="btn danger" id="pc-stop">配信を停止</button>
+      </div>
+
+      <div class="status wait" id="pc-status"><span class="dot"></span><span>待機中</span></div>
+
+      <div class="help hidden" id="pc-help">
+        <b>音が取得できませんでした。</b><br>
+        共有ダイアログで「画面全体」タブを選び、<b>「システム オーディオも共有する」</b>にチェックを入れてからもう一度お試しください。ブラウザのタブの音だけを送りたい場合は「Chrome タブ」を選び「タブの音声も共有する」をオンにします。<br>
+        ※ Macではシステム全体の音は共有できません（タブの音のみ）。
+      </div>
+    </div>
+  </section>
+
+  <!-- PHONE -->
+  <section id="view-phone" class="panel">
+    <button class="back" data-back>← 戻る</button>
+    <div class="card">
+      <div id="ph-form">
+        <h2>iPhoneで聴く</h2>
+        <p class="lead">PCに表示されている6桁の接続コードを入力してください。</p>
+        <div class="codeinput" id="codeinput">
+          <input inputmode="numeric" maxlength="1" autocomplete="one-time-code"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1"><input inputmode="numeric" maxlength="1">
+        </div>
+        <button class="btn" id="ph-connect" disabled>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>接続して聴く
+        </button>
+      </div>
+
+      <div class="playing" id="ph-playing">
+        <h2>再生中</h2>
+        <div class="bars idle" id="bars"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+        <button class="btn hidden" id="ph-play">▶ タップして再生</button>
+        <div class="row">
+          <button class="btn ghost" id="ph-mute">ミュート</button>
+          <button class="btn danger" id="ph-stop">切断</button>
+        </div>
+        <p class="tip">音量はiPhone本体のボタンで調整できます。<br>Safariを開いたまま（画面を表示したまま）にしておくと途切れにくくなります。</p>
+      </div>
+
+      <div class="status wait" id="ph-status"><span class="dot"></span><span>コードを入力してください</span></div>
+    </div>
+  </section>
+
+  <footer>OtoBridge — 音声はWebRTCで端末間を直接流れます</footer>
+</div>
+
+<audio id="remote" playsinline autoplay></audio>
+
+<script>
+(() => {
+  const PREFIX = 'otobridge-v1-';
+  const $ = s => document.querySelector(s);
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  const isMobile = isIOS || /Android/.test(navigator.userAgent);
+
+  // 接続経路の候補（STUN）を複数用意して、つながりやすくする
+  const PEER_OPTS = { debug: 0, config: { iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' }
+  ], iceCandidatePoolSize: 4 } };
+  const HEARTBEAT_MS = 2500, DEAD_MS = 9000, MAX_RETRY = 8;
+
+  // 起動時の環境チェック（よくある失敗を先に案内する）
+  function envProblem(){
+    if (!window.isSecureContext) return 'このページは https:// で開く必要があります（http:// やファイル直接では動きません）。';
+    if (!window.Peer) return '通信ライブラリを読み込めませんでした。ネット接続を確認してページを再読み込みしてください。';
+    if (!window.RTCPeerConnection) return 'このブラウザは音声の直接通信（WebRTC）に対応していません。';
+    return null;
+  }
+
+  // ---------- 画面切り替え ----------
+  const views = { home: $('#view-home'), pc: $('#view-pc'), phone: $('#view-phone') };
+  function show(name){
+    views.home.classList.toggle('hidden', name !== 'home');
+    views.pc.classList.toggle('show', name === 'pc');
+    views.phone.classList.toggle('show', name === 'phone');
+    window.scrollTo({top:0, behavior:'smooth'});
+  }
+  (isMobile ? $('#role-phone') : $('#role-pc')).classList.add('rec');
+  $('#role-pc').onclick = () => show('pc');
+  $('#role-phone').onclick = () => { show('phone'); setTimeout(()=>inputs[0].focus(),300); };
+  document.querySelectorAll('[data-back]').forEach(b => b.onclick = () => { stopPC(); stopPhone(); show('home'); });
+  $('#home').onclick = () => { stopPC(); stopPhone(); show('home'); };
+
+  function setStatus(el, cls, text){
+    el.className = 'status ' + cls;
+    el.querySelector('span:last-child').textContent = text;
+  }
+
+  // Opusを高音質・ステレオに
+  function hiFi(sdp){
+    return sdp.replace(/a=fmtp:(\d+) (.*minptime.*)/g, (m, pt, params) => {
+      let p = params.replace(/;?\s*(stereo|sprop-stereo|maxaveragebitrate|useinbandfec)=[^;]*/g,'');
+      return `a=fmtp:${pt} ${p};stereo=1;sprop-stereo=1;maxaveragebitrate=192000;useinbandfec=1`;
+    });
+  }
+  function preferLowLatency(pc){
+    try { pc.getReceivers().forEach(r => { if ('playoutDelayHint' in r) r.playoutDelayHint = 0.02; if ('jitterBufferTarget' in r) r.jitterBufferTarget = 20; }); } catch(e){}
+  }
+
+  // ================= PC側 =================
+  let pcPeer = null, pcStream = null, audioOnly = null, calls = new Map(), meterRAF = null, meterCtx = null;
+  const pcStatus = $('#pc-status');
+
+  function genCode(){ return String(Math.floor(100000 + Math.random()*900000)); }
+
+  $('#pc-start').onclick = async () => {
+    $('#pc-help').classList.add('hidden');
+    const ep = envProblem(); if (ep){ setStatus(pcStatus,'err',ep); return; }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia){
+      setStatus(pcStatus,'err','このブラウザは音声共有に対応していません。PCの Chrome か Edge で開いてください。');
+      return;
+    }
+    try {
+      pcStream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 1, width: 320, height: 180 },
+        audio: { echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:2, sampleRate:48000 },
+        systemAudio: 'include', selfBrowserSurface: 'exclude', surfaceSwitching: 'include'
+      });
+    } catch(e){
+      setStatus(pcStatus,'err','共有がキャンセルされました。もう一度「配信を開始」を押してください。');
+      return;
+    }
+    const at = pcStream.getAudioTracks();
+    if (!at.length){
+      pcStream.getTracks().forEach(t=>t.stop()); pcStream = null;
+      $('#pc-help').classList.remove('hidden');
+      setStatus(pcStatus,'err','音声トラックがありません。「システム オーディオも共有する」をオンにしてください。');
+      return;
+    }
+    try { at[0].contentHint = 'music'; } catch(e){}
+    audioOnly = new MediaStream(at);
+    // 共有停止ボタン（Chromeのバー）で止められたとき
+    pcStream.getTracks().forEach(t => t.addEventListener('ended', () => { if (pcStream) stopPC('共有が終了しました。'); }));
+    startMeter(audioOnly);
+    startPeer(0);
+  };
+
+  let pcCode = null, hbTimer = null, srvRetry = 0;
+  function startHeartbeat(){
+    clearInterval(hbTimer);
+    hbTimer = setInterval(() => {
+      const now = Date.now();
+      calls.forEach((v, id) => {
+        try { v.conn.open && v.conn.send({ t:'ping', n:now }); } catch(e){}
+        if (now - v.seen > DEAD_MS * 2){ // 応答のない端末は片付ける
+          try{v.call.close()}catch(e){} try{v.conn.close()}catch(e){}
+          calls.delete(id); updateCount();
+        }
+      });
+    }, HEARTBEAT_MS);
+  }
+
+  function startPeer(tries){
+    // 再接続時は同じコードを使い続ける（iPhone側がそのまま戻れるように）
+    const code = pcCode || genCode();
+    setStatus(pcStatus,'wait','接続コードを準備しています…');
+    pcPeer = new Peer(PREFIX + code, PEER_OPTS);
+    pcPeer.on('open', () => {
+      pcCode = code; srvRetry = 0; startHeartbeat();
+      $('#pc-start').classList.add('hidden');
+      $('#pc-live').classList.remove('hidden');
+      $('#pc-lead').textContent = 'iPhoneのカメラでQRコードを読み取るか、iPhoneで「iPhoneで聴く」を開いて接続コードを入力してください。';
+      $('#pc-code').textContent = code.slice(0,3) + ' ' + code.slice(3);
+      const url = location.origin + location.pathname + '?code=' + code;
+      const q = $('#qr'); q.innerHTML = '';
+      if (location.protocol === 'file:'){
+        q.innerHTML = '<div style="color:#b3261e;font-size:12px;line-height:1.6;padding:6px">ファイルを直接開いているため、iPhoneはこのページを開けません。<br><br>フォルダをNetlifyやGitHub Pagesに置き、https:// のURLで開き直してください。</div>';
+        setStatus(pcStatus,'err','PCのファイルとして開いています。https:// のサイトに置いてから使ってください。');
+        return;
+      }
+      if (window.QRCode) new QRCode(q, { text:url, width:160, height:160, colorDark:'#0b1530', colorLight:'#ffffff', correctLevel: QRCode.CorrectLevel.M });
+      else q.textContent = url;
+      setStatus(pcStatus,'ok','配信中 — iPhoneからの接続を待っています');
+    });
+    pcPeer.on('error', err => {
+      if (err.type === 'unavailable-id' && tries < 5){
+        pcPeer.destroy(); pcPeer = null;
+        // 自分のコードがまだサーバーに残っている場合は少し待って同じコードで、それ以外は新しいコードで
+        if (!pcCode) setTimeout(() => audioOnly && startPeer(tries+1), 0);
+        else setTimeout(() => audioOnly && startPeer(tries+1), 3000);
+        return;
+      }
+      if (err.type === 'peer-unavailable') return; // 去ったiPhone宛ての失敗は無視
+      if (['network','server-error','socket-error','socket-closed','disconnected'].includes(err.type)){
+        retryServer(); return;
+      }
+      setStatus(pcStatus,'err','エラーが発生しました（' + err.type + '）。「配信を停止」→「配信を開始」でやり直してください。');
+    });
+    // 案内サーバーとの接続が切れても、すでにつながっている音声は流れ続ける。裏で再接続する
+    pcPeer.on('disconnected', retryServer);
+    // iPhoneがデータ接続してきたら、こちらから音声を送る
+    pcPeer.on('connection', conn => {
+      conn.on('data', d => { const v = calls.get(conn.peer); if (v) v.seen = Date.now(); });
+      conn.on('open', () => {
+        if (!audioOnly) return;
+        const old = calls.get(conn.peer); if (old){ try{old.call.close()}catch(e){} }
+        const call = pcPeer.call(conn.peer, audioOnly, { sdpTransform: hiFi });
+        calls.set(conn.peer, { call, conn, seen: Date.now() });
+        updateCount();
+        const drop = () => { if (calls.has(conn.peer)){ calls.delete(conn.peer); updateCount(); } };
+        call.on('close', drop); call.on('error', drop); conn.on('close', drop);
+        call.on('stream', ()=>{});
+        setTimeout(() => { if (call.peerConnection){
+          const s = call.peerConnection.getSenders().find(x => x.track && x.track.kind === 'audio');
+          if (s){ const p = s.getParameters(); if (!p.encodings || !p.encodings.length) p.encodings=[{}]; p.encodings[0].maxBitrate = 192000; p.encodings[0].priority='high'; s.setParameters(p).catch(()=>{}); }
+          call.peerConnection.addEventListener('connectionstatechange', () => {
+            if (['failed','closed'].includes(call.peerConnection.connectionState)) drop();
+          });
+        }}, 500);
+      });
+    });
+  }
+
+  function retryServer(){
+    if (!pcPeer || !audioOnly || pcPeer.destroyed) return;
+    if (pcPeer._retrying) return; pcPeer._retrying = true;
+    const wait = Math.min(15000, 1000 * Math.pow(2, srvRetry++));
+    setStatus(pcStatus,'wait', `案内サーバーに再接続しています…（接続中のiPhoneへの音声はそのまま流れます）`);
+    setTimeout(() => {
+      if (!pcPeer || !audioOnly) return;
+      pcPeer._retrying = false;
+      if (pcPeer.destroyed){ startPeer(0); return; }
+      try { pcPeer.reconnect(); } catch(e){ try{pcPeer.destroy()}catch(_){} startPeer(0); }
+      setTimeout(() => { if (pcPeer && pcPeer.open) updateCount(); }, 1500);
+    }, wait);
+  }
+  window.addEventListener('online', () => { if (pcPeer && pcPeer.disconnected) retryServer(); });
+
+  function updateCount(){
+    $('#pc-count').textContent = calls.size;
+    if (pcPeer && audioOnly) setStatus(pcStatus,'ok', calls.size ? `配信中 — ${calls.size}台のiPhoneに送信しています` : '配信中 — iPhoneからの接続を待っています');
+  }
+
+  function startMeter(stream){
+    try {
+      meterCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = meterCtx.createMediaStreamSource(stream);
+      const an = meterCtx.createAnalyser(); an.fftSize = 512; src.connect(an);
+      const buf = new Uint8Array(an.fftSize);
+      const bar = $('#pc-meter');
+      const loop = () => {
+        an.getByteTimeDomainData(buf);
+        let sum=0; for (const v of buf){ const x=(v-128)/128; sum+=x*x; }
+        bar.style.width = Math.min(100, Math.sqrt(sum/buf.length)*320) + '%';
+        meterRAF = requestAnimationFrame(loop);
+      };
+      loop();
+    } catch(e){}
+  }
+
+  function stopPC(msg){
+    clearInterval(hbTimer); hbTimer = null; pcCode = null; srvRetry = 0;
+    calls.forEach(({call,conn}) => { try{call.close()}catch(e){} try{conn.close()}catch(e){} });
+    calls.clear();
+    if (pcPeer){ try{pcPeer.destroy()}catch(e){} pcPeer = null; }
+    if (pcStream){ const s = pcStream; pcStream = null; s.getTracks().forEach(t=>t.stop()); }
+    audioOnly = null;
+    if (meterRAF) cancelAnimationFrame(meterRAF); meterRAF = null;
+    if (meterCtx){ meterCtx.close().catch(()=>{}); meterCtx = null; }
+    $('#pc-meter').style.width = '0';
+    $('#pc-live').classList.add('hidden');
+    $('#pc-start').classList.remove('hidden');
+    $('#pc-count').textContent = '0';
+    $('#pc-lead').innerHTML = '「配信を開始」を押すと共有する画面を選ぶ画面が出ます。<b>「画面全体」</b>を選び、左下の<b>「システム オーディオも共有する」</b>をオンにしてください。';
+    setStatus(pcStatus, 'wait', typeof msg === 'string' ? msg : '待機中');
+  }
+  $('#pc-stop').onclick = () => stopPC('配信を停止しました。');
+  window.addEventListener('beforeunload', () => { stopPC(); stopPhone(); });
+
+  // ================= iPhone側 =================
+  const inputs = [...document.querySelectorAll('#codeinput input')];
+  const phStatus = $('#ph-status');
+  const audio = $('#remote');
+  let phPeer = null, phConn = null, phCall = null, wakeLock = null, barsRAF = null, phCtx = null, timeoutId = null;
+
+  const getCode = () => inputs.map(i=>i.value).join('');
+  const refresh = () => { $('#ph-connect').disabled = !/^\d{6}$/.test(getCode()); };
+  inputs.forEach((inp, i) => {
+    inp.addEventListener('input', () => {
+      const v = inp.value.replace(/\D/g,'');
+      if (v.length > 1){ // ペースト・自動入力
+        v.slice(0,6).split('').forEach((c,k)=>{ if (inputs[k]) inputs[k].value = c; });
+        inputs[Math.min(5, v.length-1)].focus();
+      } else {
+        inp.value = v;
+        if (v && inputs[i+1]) inputs[i+1].focus();
+      }
+      refresh();
+    });
+    inp.addEventListener('keydown', e => { if (e.key === 'Backspace' && !inp.value && inputs[i-1]) inputs[i-1].focus(); if (e.key==='Enter' && !$('#ph-connect').disabled) $('#ph-connect').click(); });
+    inp.maxLength = 6;
+  });
+
+  $('#ph-connect').onclick = () => {
+    const ep = envProblem(); if (ep){ setStatus(phStatus,'err',ep); return; }
+    // iOSの自動再生制限を、タップの瞬間に解除しておく
+    audio.muted = false;
+    try { audio.play().catch(()=>{}); } catch(e){}
+    try { phCtx = phCtx || new (window.AudioContext || window.webkitAudioContext)(); phCtx.resume(); } catch(e){}
+    wantCode = getCode(); everPlayed = false; retry = 0;
+    try { localStorage.setItem('otobridge-last', wantCode); } catch(e){}
+    $('#ph-connect').disabled = true;
+    connectPhone();
+  };
+
+  // 状態：wantCode が入っている間は「つながっていたい」= 切れたら自動で再接続する
+  let wantCode = null, everPlayed = false, retry = 0, retryTimer = null, lastPing = 0, watchTimer = null, attempt = 0;
+
+  function connectPhone(){
+    teardown();
+    const my = ++attempt; // 古い試行からのイベントを無視するための番号
+    const alive = () => my === attempt && wantCode;
+    setStatus(phStatus,'wait', retry ? `再接続しています…（${retry}/${MAX_RETRY}）` : '接続しています…');
+    phPeer = new Peer(PEER_OPTS);
+    phPeer.on('open', () => {
+      if (!alive()) return;
+      phConn = phPeer.connect(PREFIX + wantCode, { reliable: true });
+      phConn.on('open', () => { if (alive() && !audio.srcObject) setStatus(phStatus,'wait','PCが見つかりました。音声を受信しています…'); });
+      phConn.on('data', d => { if (d && d.t === 'ping'){ lastPing = Date.now(); try{ phConn.send({ t:'pong' }); }catch(e){} } });
+      phConn.on('close', () => { if (alive()) dropped('PCとの接続が切れました'); });
+    });
+    phPeer.on('call', call => {
+      if (!alive()) { try{call.close()}catch(e){} return; }
+      phCall = call;
+      call.answer(undefined, { sdpTransform: hiFi });
+      call.on('stream', stream => {
+        if (!alive()) return;
+        clearTimeout(timeoutId);
+        if (call.peerConnection){
+          preferLowLatency(call.peerConnection);
+          call.peerConnection.addEventListener('connectionstatechange', () => {
+            const s = call.peerConnection.connectionState;
+            if (s === 'failed' && alive()) dropped('音声の経路が途切れました');
+          });
+        }
+        audio.srcObject = stream;
+        everPlayed = true; retry = 0; lastPing = Date.now();
+        $('#ph-form').classList.add('hidden');
+        $('#ph-playing').classList.add('show');
+        const p = audio.play();
+        if (p && p.catch) p.catch(() => { $('#ph-play').classList.remove('hidden'); });
+        setStatus(phStatus,'ok','接続しました — PCの音を再生中');
+        startBars(stream);
+        requestWake();
+        startWatch();
+      });
+      call.on('close', () => { if (alive()) dropped('音声が止まりました'); });
+    });
+    // 案内サーバーとの接続が切れても、再生中の音声（端末間の直接通信）は止めない。裏で静かに再接続
+    const quietReconnect = () => setTimeout(() => {
+      if (alive() && phPeer && !phPeer.destroyed && phPeer.disconnected){ try { phPeer.reconnect(); } catch(e){} }
+    }, 3000);
+    phPeer.on('disconnected', quietReconnect);
+    phPeer.on('error', err => {
+      if (!alive()) return;
+      if (audio.srcObject && ['network','server-error','socket-error','socket-closed','disconnected'].includes(err.type)){
+        quietReconnect(); return;
+      }
+      // 再生中の「相手が見つからない」はサーバー側の古い通知。本当に切れたかはハートビートで判断する
+      if (audio.srcObject && err.type === 'peer-unavailable') return;
+      // 一度も聴けていない段階で「そのコードは無い」は、コード間違いの可能性が高いので即案内
+      if (err.type === 'peer-unavailable' && !everPlayed){
+        endPhone('そのコードの配信が見つかりません。PCで配信中か、コードが正しいか確認してください。', true); return;
+      }
+      if (err.type === 'browser-incompatible'){ endPhone('このブラウザでは使えません。iPhoneのSafariで開いてください。', true); return; }
+      dropped('接続エラー（' + err.type + '）');
+    });
+    clearTimeout(timeoutId);
+    timeoutId = setTimeout(() => {
+      if (alive() && !audio.srcObject) dropped('応答がありません');
+    }, 7000); // 通常は1秒以内につながる。詰まった試行は早めに捨ててやり直す
+  }
+
+  // 切れたとき：少しずつ間隔をあけて自動で再接続する
+  function dropped(reason){
+    if (!wantCode) return;
+    teardown();
+    if (retry >= MAX_RETRY){
+      endPhone(reason + '。自動再接続をあきらめました。PCで配信中か、同じWi‑Fiにいるか確認してもう一度接続してください。', true);
+      return;
+    }
+    retry++;
+    const wait = Math.min(8000, 700 * Math.pow(1.7, retry));
+    setStatus(phStatus,'wait', `${reason}。自動で再接続します…（${retry}/${MAX_RETRY}）`);
+    $('#bars').classList.add('idle');
+    clearTimeout(retryTimer);
+    retryTimer = setTimeout(() => { if (wantCode) connectPhone(); }, wait);
+  }
+
+  // 見張り役：PCからの合図が途絶えた／再生が勝手に止まったら立て直す
+  function startWatch(){
+    clearInterval(watchTimer);
+    watchTimer = setInterval(() => {
+      if (!wantCode || !audio.srcObject) return;
+      if (Date.now() - lastPing > DEAD_MS){ dropped('PCからの応答が途絶えました'); return; }
+      if (audio.paused && !userPaused){ audio.play().catch(() => $('#ph-play').classList.remove('hidden')); }
+      if (phCtx && phCtx.state === 'suspended') phCtx.resume().catch(()=>{});
+    }, 2000);
+  }
+  let userPaused = false;
+  audio.addEventListener('stalled', () => { if (audio.srcObject) audio.play().catch(()=>{}); });
+
+  $('#ph-play').onclick = () => {
+    audio.play().then(()=>$('#ph-play').classList.add('hidden')).catch(()=>{});
+    if (phCtx) phCtx.resume();
+  };
+  $('#ph-mute').onclick = () => {
+    audio.muted = !audio.muted;
+    $('#ph-mute').textContent = audio.muted ? 'ミュート解除' : 'ミュート';
+  };
+  $('#ph-stop').onclick = () => endPhone('切断しました。');
+
+  function startBars(stream){
+    const bars = $('#bars'), spans = [...bars.children];
+    if (barsRAF) cancelAnimationFrame(barsRAF);
+    try {
+      phCtx = phCtx || new (window.AudioContext || window.webkitAudioContext)();
+      const src = phCtx.createMediaStreamSource(stream);
+      const an = phCtx.createAnalyser(); an.fftSize = 64; src.connect(an); // 出力には接続しない（再生は<audio>）
+      const data = new Uint8Array(an.frequencyBinCount);
+      bars.classList.remove('idle');
+      const loop = () => {
+        an.getByteFrequencyData(data);
+        spans.forEach((s,i) => { s.style.height = (10 + (data[i+1]||0)/255*60) + 'px'; });
+        barsRAF = requestAnimationFrame(loop);
+      };
+      loop();
+    } catch(e){ bars.classList.add('idle'); }
+  }
+
+  async function requestWake(){
+    try { if ('wakeLock' in navigator && !wakeLock) { wakeLock = await navigator.wakeLock.request('screen'); wakeLock.addEventListener('release', () => { wakeLock = null; }); } } catch(e){}
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !wantCode) return;
+    requestWake();
+    if (audio.srcObject){
+      audio.play().catch(()=>{});
+      // バックグラウンドの間に切れていたら、すぐ立て直す
+      if (Date.now() - lastPing > DEAD_MS) { retry = 0; dropped('接続を確認しています'); }
+    } else if (!retryTimer) { connectPhone(); }
+  });
+  window.addEventListener('online', () => { if (wantCode && !audio.srcObject){ retry = 0; clearTimeout(retryTimer); connectPhone(); } });
+
+  // 通信部品だけを片付ける（「つながっていたい」状態は保つ）
+  function teardown(){
+    clearTimeout(timeoutId); clearInterval(watchTimer); watchTimer = null;
+    clearTimeout(retryTimer); retryTimer = null;
+    if (barsRAF) cancelAnimationFrame(barsRAF); barsRAF = null;
+    try { phCall && phCall.close(); } catch(e){}
+    try { phConn && phConn.close(); } catch(e){}
+    const p = phPeer; phPeer = null; phCall = null; phConn = null;
+    if (p) try { p.destroy(); } catch(e){}
+    audio.srcObject = null;
+  }
+  function stopPhone(){
+    wantCode = null; attempt++;
+    teardown();
+    if (wakeLock){ wakeLock.release().catch(()=>{}); wakeLock = null; }
+  }
+  function endPhone(msg, isErr){
+    stopPhone();
+    $('#ph-playing').classList.remove('show');
+    $('#ph-play').classList.add('hidden');
+    $('#ph-form').classList.remove('hidden');
+    $('#bars').classList.add('idle');
+    refresh();
+    setStatus(phStatus, isErr ? 'err' : 'wait', msg);
+  }
+
+  // ---------- QRから来た場合 ----------
+  const qs = new URLSearchParams(location.search).get('code');
+  if (qs && /^\d{6}$/.test(qs)){
+    qs.split('').forEach((c,i)=>inputs[i].value=c);
+    refresh();
+    show('phone');
+    setStatus(phStatus,'wait','コードを読み取りました。「接続して聴く」をタップしてください。');
+  } else {
+    try { const last = localStorage.getItem('otobridge-last'); if (last && /^\d{6}$/.test(last)){ last.split('').forEach((c,i)=>inputs[i].value=c); refresh(); } } catch(e){}
+  }
+  if (location.protocol === 'file:'){
+    const w = document.createElement('div'); w.className='help';
+    w.innerHTML = '<b>いまはPCのファイルとして開いています。</b><br>このままだとiPhoneからこのページを開けません。フォルダごと Netlify や GitHub Pages に置き、表示された <b>https://</b> のURLをPCとiPhoneの両方で開いてください。';
+    document.querySelector('#view-home .hero').after(w);
+  }
+  const ep0 = envProblem(); if (ep0){ setStatus($('#pc-status'),'err',ep0); setStatus(phStatus,'err',ep0); }
+})();
+</script>
+</body>
+</html>
